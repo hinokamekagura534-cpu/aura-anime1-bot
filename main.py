@@ -16,24 +16,15 @@ logging.basicConfig(
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s", level=logging.INFO
 )
 
-# ---------------------------------------------------------
-# ١. بەشی ڕێکخستنە سەرەتاییەکان (Configuration)
-# ---------------------------------------------------------
 BOT_TOKEN = os.environ.get("BOT_TOKEN")
-
-# لیستی ئەدیمینەکان (ئۆوێنەر Sung Jin Woo لەسەرەتاوەیە)
 ADMIN_IDS = [6450069400, 5455374693, 8535560894, 1475355789, 5242890148]
 
-# داتابەیسی ئەنیمی
 ANIMES_DATABASE = {}
 
-# حاڵەتەکانی Conversation Handler بۆ بەشی ستاف
+# حاڵەتەکانی Conversation Handler
 ADD_NAME, ADD_SEASON, ADD_EPISODE, ADD_LINK = range(4)
 
 
-# ---------------------------------------------------------
-# ٢. دروستکردنی دوگمەکانی خوارەوەی چات (Menu Keyboard)
-# ---------------------------------------------------------
 def get_main_menu():
     keyboard = [
         ["🎬 لیستی ئەنیمی", "🔍 گەڕانی خێرا"],
@@ -42,29 +33,27 @@ def get_main_menu():
     return ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
 
 
-# ---------------------------------------------------------
-# ٣. فەرمانە سەرەکییەکان (User Commands & Text Handlers)
-# ---------------------------------------------------------
+def get_admin_menu():
+    keyboard = [
+        ["➕ زیادکردنی ئەنیمی", "✏️ دەستکاریکردنی ئەنیمی"],
+        ["🗑 سڕینەوەی ئەنیمی", "🔙 گەڕانەوە بۆ منیووی سەرەکی"]
+    ]
+    return ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
+
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     welcome_text = (
         "✨ بەخێر بێیت بۆ بۆتی فەرمیی Aura Anime! 🎬\n\n"
-        "لێرە بە ئاسانی دەستت بە سەرجەم ئەنیمییە وەرگێڕدراوەکان دەگات بە بەرزترین کوالێتی.\n\n"
-        "🔹 تایبەتمەندییەکان:\n"
-        "▫️ 🎬 لیستی گشتی ئەنیمییەکان\n"
-        "▫️ 🔍 گەڕانی خێرا و ئاسان\n"
-        "▫️ 🎞 بەستەری ڕاستەوخۆی ئەڵقەکان\n\n"
         "👨‍💻 Developer: @safenyorochi\n\n"
-        "👇 بۆ دەستپێکردن، یەکێک هەڵبژێرە لە دوگمەکانی خوارەوە:"
+        "👇 بۆ دەستپێکردن، یەکێک لە دوگمەکانی خوارەوە هەڵبژێرە:"
     )
     await update.message.reply_text(welcome_text, reply_markup=get_main_menu())
 
 
-# پیشاندانی لیستی ئەنیمی
 async def anime_list(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not ANIMES_DATABASE:
         await update.message.reply_text(
-            "⚠️ ئێستا هیچ ئەنیمییەک لە لیستەکەدا بەردەست نییە.\n(ئەدیمین دەتوانێت لە ڕێگەی پانێڵی ستافەوە زیادی بکات)",
+            "⚠️ ئێستا هیچ ئەنیمییەک لە لیستەکەدا بەردەست نییە.",
             reply_markup=get_main_menu()
         )
         return
@@ -74,16 +63,14 @@ async def anime_list(update: Update, context: ContextTypes.DEFAULT_TYPE):
         keyboard.append([InlineKeyboardButton(anime_name, callback_data=f"anime_{anime_name}")])
 
     reply_markup = InlineKeyboardMarkup(keyboard)
-    await update.message.reply_text("✨ **لیستی ئەنیمییەکانی Aura:**\nتکایە ئەنیمییەک هەڵبژێرە:", reply_markup=reply_markup, parse_mode="Markdown")
+    await update.message.reply_text("✨ **لیستی ئەنیمییەکان:**", reply_markup=reply_markup, parse_mode="Markdown")
 
 
-# گەڕان
 async def search_item(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("🔍 تکایە ناوی ئەو ئەنیمییە بنووسە کە دەتەوێت بۆی بگەڕێیت:")
     context.user_data["searching"] = True
 
 
-# پشکنینی نامەکان بۆ دوگمەکانی چات
 async def handle_text_messages(update: Update, context: ContextTypes.DEFAULT_TYPE):
     text = update.message.text
 
@@ -92,6 +79,12 @@ async def handle_text_messages(update: Update, context: ContextTypes.DEFAULT_TYP
         return
     elif text == "🔍 گەڕانی خێرا":
         await search_item(update, context)
+        return
+    elif text == "🛠 پانێڵی ستاف (ئەدیمین)":
+        await staff_panel(update, context)
+        return
+    elif text == "🔙 گەڕانەوە بۆ منیووی سەرەکی":
+        await update.message.reply_text("🔙 گەڕانەوە بۆ منیووی سەرەکی.", reply_markup=get_main_menu())
         return
 
     if context.user_data.get("searching"):
@@ -109,9 +102,6 @@ async def handle_text_messages(update: Update, context: ContextTypes.DEFAULT_TYP
         await update.message.reply_text("🔍 **ئەنجامی گەڕان:**", reply_markup=reply_markup, parse_mode="Markdown")
 
 
-# ---------------------------------------------------------
-# ٤. سیستەمی هەڵبژاردنی وەرز و ئەڵقە (Callback Queries)
-# ---------------------------------------------------------
 async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
@@ -127,7 +117,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             keyboard.append([InlineKeyboardButton(season_name, callback_data=f"season_{anime_name}_{season_name}")])
 
         reply_markup = InlineKeyboardMarkup(keyboard)
-        await query.edit_message_text(f"📂 پێڕستی وەررزەکان بۆ: **{anime_name}**\nتکایە وەرزێک هەڵبژێرە:", reply_markup=reply_markup, parse_mode="Markdown")
+        await query.edit_message_text(f"📂 **{anime_name}** - وەرزی داواکراو هەڵبژێرە:", reply_markup=reply_markup, parse_mode="Markdown")
 
     elif data.startswith("season_"):
         _, anime_name, season_name = data.split("_", 2)
@@ -140,43 +130,55 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         keyboard.append([InlineKeyboardButton("🔙 گەڕانەوە", callback_data=f"anime_{anime_name}")])
 
         reply_markup = InlineKeyboardMarkup(keyboard)
-        await query.edit_message_text(f"🎬 ئەڵقەکانی **{anime_name}** - **{season_name}**:", reply_markup=reply_markup, parse_mode="Markdown")
+        await query.edit_message_text(f"🎬 **{anime_name}** - **{season_name}**:", reply_markup=reply_markup, parse_mode="Markdown")
+
+    elif data.startswith("del_"):
+        anime_name = data.replace("del_", "")
+        if anime_name in ANIMES_DATABASE:
+            del ANIMES_DATABASE[anime_name]
+            await query.edit_message_text(f"✅ ئەنیمی **{anime_name}** بەسەرکەوتوویی سڕایەوە!", parse_mode="Markdown")
+        else:
+            await query.edit_message_text("❌ ئەم ئەنیمییە پێشتر سڕاوەتەوە یان بوونی نییە.")
 
 
-# ---------------------------------------------------------
-# ٥. پانێڵی ستاف (Staff Panel & Admin Check)
-# ---------------------------------------------------------
+# پانێڵی ئەدیمین
 async def staff_panel(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
 
     if user_id not in ADMIN_IDS:
-        await update.message.reply_text("⛔️ ببوورە، تەنها ئەدیمین دەسەڵاتی بەکارهێنانی پانێڵی ستافی هەیە!", reply_markup=get_main_menu())
-        return ConversationHandler.END
+        await update.message.reply_text("⛔️ ببوورە، تەنها ئەدیمین دەتوانێت ئەم پانێڵە بەکاربهێنێت!", reply_markup=get_main_menu())
+        return
 
     await update.message.reply_text(
-        "🛠 **بەخێر بێیت بۆ پانێڵی ستاف**\n"
-        "📌 تکایە ناوی ئەو ئەنیمییە نووسە کە دەتەوێت زیادی بکەیت:\n"
-        "(بۆ هەڵوەشاندنەوە فەرمانی /cancel بنووسە)",
-        reply_markup=ReplyKeyboardRemove()
+        "🛠 **بەخێر بێیت بۆ پانێڵی ستاف**\nتکایە بژاردەیەک هەڵبژێرە:",
+        reply_markup=get_admin_menu()
     )
+
+
+async def start_add(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_id = update.effective_user.id
+    if user_id not in ADMIN_IDS:
+        return ConversationHandler.END
+
+    await update.message.reply_text("📌 ناوی ئەو ئەنیمییە بنووسە کە دەتەوێت زیادی بکەیت یان دەستکاری بکەیت:\n(/cancel بۆ هەڵوەشاندنەوە)", reply_markup=ReplyKeyboardRemove())
     return ADD_NAME
 
 
 async def get_anime_name(update: Update, context: ContextTypes.DEFAULT_TYPE):
     context.user_data["new_anime_name"] = update.message.text
-    await update.message.reply_text("📂 ئێستا ناوی وەرزەکە بنووسە (بۆ نموونە: Season 1):")
+    await update.message.reply_text("📂 ناوی وەرزەکە بنووسە (بۆ نموونە: وەرزی 1):")
     return ADD_SEASON
 
 
 async def get_season_name(update: Update, context: ContextTypes.DEFAULT_TYPE):
     context.user_data["new_season_name"] = update.message.text
-    await update.message.reply_text("🎬 ئێستا ناوی ئەڵقەکە بنووسە (بۆ نموونە: Episode 1):")
+    await update.message.reply_text("🎬 ناوی ئەڵقەکە یان ڕێژەی ئەڵقەکان بنووسە (بۆ نموونە: ئەڵقەی 1-12 یان ئەڵقەی 1):")
     return ADD_EPISODE
 
 
 async def get_episode_name(update: Update, context: ContextTypes.DEFAULT_TYPE):
     context.user_data["new_episode_name"] = update.message.text
-    await update.message.reply_text("🔗 ئێستا لینکی ئەڵقەکە لە چەناڵ بنووسە (https://t.me/...):")
+    await update.message.reply_text("🔗 لینکی ئەڵقەکە یان لینکی پۆستی چەناڵەکە بنووسە:")
     return ADD_LINK
 
 
@@ -195,31 +197,41 @@ async def save_anime(update: Update, context: ContextTypes.DEFAULT_TYPE):
     ANIMES_DATABASE[anime_name]["Seasons"][season_name][episode_name] = link
 
     await update.message.reply_text(
-        f"✅ بە سەرکەوتوویی زیادکرا!\n\n"
-        f"📌 ئەنیمی: {anime_name}\n"
-        f"📂 وەرز: {season_name}\n"
-        f"🎬 ئەڵقە: {episode_name}\n"
-        f"🔗 لینک: {link}",
-        reply_markup=get_main_menu()
+        f"✅ بە سەرکەوتوویی پاشەکەوت کرا!\n\n📌 ئەنیمی: {anime_name}\n📂 وەرز: {season_name}\n🎬 ئەڵقە: {episode_name}",
+        reply_markup=get_admin_menu()
     )
     return ConversationHandler.END
 
 
+async def start_delete(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_id = update.effective_user.id
+    if user_id not in ADMIN_IDS:
+        return
+
+    if not ANIMES_DATABASE:
+        await update.message.reply_text("⚠️ هیچ ئەنیمییەک لە لیستەکەدا نییە بۆ سڕینەوە.", reply_markup=get_admin_menu())
+        return
+
+    keyboard = []
+    for name in ANIMES_DATABASE.keys():
+        keyboard.append([InlineKeyboardButton(f"🗑 {name}", callback_data=f"del_{name}")])
+
+    reply_markup = InlineKeyboardMarkup(keyboard)
+    await update.message.reply_text("🗑 **ئەو ئەنیمییە هەڵبژێرە کە دەتەوێت بسڕێتەوە:**", reply_markup=reply_markup, parse_mode="Markdown")
+
+
 async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text("❌ کردارەکە هەڵوەشێنرایەوە.", reply_markup=get_main_menu())
+    await update.message.reply_text("❌ کردارەکە هەڵوەشێنرایەوە.", reply_markup=get_admin_menu())
     return ConversationHandler.END
 
 
-# ---------------------------------------------------------
-# ٦. بەشی سەرەکی کارپێکردنی بۆت
-# ---------------------------------------------------------
 def main():
     app = Application.builder().token(BOT_TOKEN).build()
 
-    staff_handler = ConversationHandler(
+    add_handler = ConversationHandler(
         entry_points=[
-            CommandHandler("staff", staff_panel),
-            MessageHandler(filters.Regex("^🛠 پانێڵی ستاف \(ئەدیمین\)$"), staff_panel)
+            MessageHandler(filters.Regex("^➕ زیادکردنی ئەنیمی$"), start_add),
+            MessageHandler(filters.Regex("^✏️ دەستکاریکردنی ئەنیمی$"), start_add)
         ],
         states={
             ADD_NAME: [MessageHandler(filters.TEXT & ~filters.COMMAND, get_anime_name)],
@@ -231,7 +243,8 @@ def main():
     )
 
     app.add_handler(CommandHandler("start", start))
-    app.add_handler(staff_handler)
+    app.add_handler(add_handler)
+    app.add_handler(MessageHandler(filters.Regex("^🗑 سڕینەوەی ئەنیمی$"), start_delete))
     app.add_handler(CallbackQueryHandler(button_handler))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_text_messages))
 
