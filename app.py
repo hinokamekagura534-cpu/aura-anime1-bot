@@ -1,19 +1,22 @@
 import os
 import sqlite3
+import subprocess
 from flask import Flask, render_template_string, request, redirect, url_for, session
 import requests
 
 app = Flask(__name__)
 app.secret_key = "aura_anime_secret_admin_key"
 
-# وەرگرتنی تۆکن لە جێگیرەکانی ژینگە (Environment Variables)
 BOT_TOKEN = os.environ.get("BOT_TOKEN")
 ADMIN_IDS = [6450069400, 5455374693, 8535560894, 1475355789, 5242890148]
-
-# وشەی تێپەڕی چوونەژوورەوەی ئەدیمین بۆ ماڵپەڕ
 ADMIN_PASSWORD = "aura_admin_pass"
 
-# دروستکردن یان بەستنەوەی داتابەیسی SQLite
+# کارپێکردنی بۆتەکە (main.py) لە Backgroundدا تا هەردووکیان پێکەوە کار بکن
+try:
+    subprocess.Popen(["python", "main.py"])
+except Exception as e:
+    print(f"Error starting bot: {e}")
+
 def init_db():
     conn = sqlite3.connect("anime.db")
     cursor = conn.cursor()
@@ -32,7 +35,6 @@ def init_db():
 
 init_db()
 
-# دیزاینی تەواوی ماڵپەڕەکە بە کوردیی سۆرانی
 HTML_TEMPLATE = """
 <!DOCTYPE html>
 <html lang="ckb" dir="rtl">
@@ -41,63 +43,17 @@ HTML_TEMPLATE = """
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>پانێڵی ئۆرا ئەنیمی - Aura Anime</title>
     <style>
-        body {
-            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-            background-color: #0f172a;
-            color: #f8fafc;
-            margin: 0;
-            padding: 20px;
-        }
-        .container {
-            max-width: 800px;
-            margin: 0 auto;
-            background: #1e293b;
-            padding: 25px;
-            border-radius: 12px;
-            box-shadow: 0 10px 25px rgba(0,0,0,0.5);
-        }
+        body { font-family: sans-serif; background-color: #0f172a; color: #f8fafc; margin: 0; padding: 20px; }
+        .container { max-width: 800px; margin: 0 auto; background: #1e293b; padding: 25px; border-radius: 12px; }
         h2, h3 { color: #38bdf8; text-align: center; }
-        label { display: block; margin-top: 12px; font-weight: bold; font-size: 14px; }
-        input {
-            width: 100%;
-            padding: 10px;
-            margin-top: 5px;
-            border-radius: 6px;
-            border: 1px solid #334155;
-            background: #0f172a;
-            color: #fff;
-            box-sizing: border-box;
-        }
-        button {
-            width: 100%;
-            padding: 12px;
-            background: #0284c7;
-            color: white;
-            border: none;
-            border-radius: 6px;
-            font-size: 16px;
-            margin-top: 18px;
-            cursor: pointer;
-            font-weight: bold;
-            transition: 0.3s;
-        }
+        label { display: block; margin-top: 12px; font-weight: bold; }
+        input { width: 100%; padding: 10px; margin-top: 5px; border-radius: 6px; border: 1px solid #334155; background: #0f172a; color: #fff; box-sizing: border-box; }
+        button { width: 100%; padding: 12px; background: #0284c7; color: white; border: none; border-radius: 6px; font-size: 16px; margin-top: 18px; cursor: pointer; font-weight: bold; }
         button:hover { background: #0369a1; }
-        table {
-            width: 100%;
-            border-collapse: collapse;
-            margin-top: 25px;
-        }
+        table { width: 100%; border-collapse: collapse; margin-top: 25px; }
         th, td { border: 1px solid #334155; padding: 10px; text-align: center; }
         th { background-color: #0284c7; }
-        .logout {
-            background: #ef4444;
-            padding: 8px 15px;
-            float: left;
-            text-decoration: none;
-            color: white;
-            border-radius: 5px;
-            font-size: 14px;
-        }
+        .logout { background: #ef4444; padding: 8px 15px; float: left; text-decoration: none; color: white; border-radius: 5px; }
     </style>
 </head>
 <body>
@@ -108,24 +64,24 @@ HTML_TEMPLATE = """
             
             <form action="/add" method="POST">
                 <label>ناوی ئەنیمی (ئینگلیزی/کوردی):</label>
-                <input type="text" name="anime_name" placeholder="بۆ نموونە: Solo Leveling" required>
+                <input type="text" name="anime_name" required>
 
                 <label>ناوی ئەنیمی (ژاپۆنی):</label>
-                <input type="text" name="japanese_name" placeholder="بۆ نموونە: 俺だけレベルアップな件" required>
+                <input type="text" name="japanese_name" required>
 
                 <label>وەرز (Season):</label>
-                <input type="text" name="season" placeholder="بۆ نموونە: 1 یان وەرزی 1" required>
+                <input type="text" name="season" placeholder="بۆ نموونە: 1" required>
 
                 <label>ئەڵقەکان (Episodes):</label>
-                <input type="text" name="episodes" placeholder="بۆ نموونە: ئەڵقەی 1-12" required>
+                <input type="text" name="episodes" placeholder="بۆ نموونە: 1-12" required>
 
-                <label>لینکی پۆستی چەناڵ (Telegram Link):</label>
+                <label>لینکی پۆستی چەناڵ:</label>
                 <input type="url" name="post_link" placeholder="https://t.me/..." required>
 
-                <button type="submit">💾 پاشەکەوتکردن لە داتابەیس و ناردن بۆ بۆت</button>
+                <button type="submit">💾 پاشەکەوتکردن لە داتابەیس</button>
             </form>
 
-            <h3>📁 ئەنیمییە تۆمارکراوەکان لە داتابەیسدا</h3>
+            <h3>📁 ئەنیمییە پاشەکەوتکراوەکان لە داتابەیسدا</h3>
             <table>
                 <tr>
                     <th>ناو</th>
@@ -171,8 +127,7 @@ def home():
 
 @app.route("/login", methods=["POST"])
 def login():
-    password = request.form.get("password")
-    if password == ADMIN_PASSWORD:
+    if request.form.get("password") == ADMIN_PASSWORD:
         session["logged_in"] = True
     return redirect(url_for("home"))
 
@@ -192,7 +147,6 @@ def add_anime():
     episodes = request.form.get("episodes")
     post_link = request.form.get("post_link")
 
-    # ۱. تۆمارکردن لە داتابەیسی SQLite
     conn = sqlite3.connect("anime.db")
     cursor = conn.cursor()
     cursor.execute('''
@@ -202,9 +156,8 @@ def add_anime():
     conn.commit()
     conn.close()
 
-    # ۲. ناردنی ئاگاداری بڵاوبوونەوە بۆ ئەدیمینەکان لە تەلەگرام
     message = (
-        f"✨ **ئەنیمیی نوێ لە ماڵپەڕەوە زیادکرا و پاشەکەوت کراوە!**\n\n"
+        f"✨ **ئەنیمیی نوێ لە ماڵپەڕەوە زیادکرا!**\n\n"
         f"📌 **ناوی ئەنیمی:** {anime_name}\n"
         f"🇯🇵 **ژاپۆنی:** {japanese_name}\n"
         f"📂 **وەرز:** {season}\n"
@@ -220,6 +173,5 @@ def add_anime():
     return redirect(url_for("home"))
 
 if __name__ == "__main__":
-    # ڕاستەوخۆ خوێندنەوەی پۆرت لە هەموو ژینگەیەکی وەک Railway
     port = int(os.environ.get("PORT", 5000))
     app.run(host="0.0.0.0", port=port)
