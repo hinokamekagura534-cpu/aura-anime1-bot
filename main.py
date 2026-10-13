@@ -22,11 +22,13 @@ from telegram.ext import (
 
 BOT_TOKEN = os.environ.get("BOT_TOKEN", "").strip()
 
-ADMIN_IDS = {
-    int(x.strip())
-    for x in os.environ.get("ADMIN_IDS", "").split(",")
-    if x.strip().isdigit()
-}
+ADMIN_IDS = [
+    6450069400,
+    5455374693,
+    8535560894,
+    1475355789,
+    5242890148,
+]
 
 DB_PATH = Path(__file__).resolve().parent / "anime.db"
 
