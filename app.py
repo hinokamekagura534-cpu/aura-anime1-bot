@@ -1,7 +1,10 @@
 import os
 import sqlite3
+import threading
 from flask import Flask, render_template, request, redirect, url_for, session
 import requests
+from telegram import Update, ReplyKeyboardMarkup
+from telegram.ext import Application, CommandHandler, ContextTypes
 
 app = Flask(__name__)
 app.secret_key = "aura_anime_secret_admin_key"
@@ -11,7 +14,7 @@ ADMIN_IDS = [6450069400, 5455374693, 8535560894, 1475355789, 5242890148]
 ADMIN_PASSWORD = "aura_admin_pass"
 
 def init_db():
-    conn = sqlite3.connect("anime.db")
+    conn = sqlite3.connect("anime.db", check_same_thread=False)
     cursor = conn.cursor()
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS animes (
@@ -72,7 +75,7 @@ def add_anime():
     conn.close()
 
     message = (
-        f"✨ **ئەنیمیی نوێ لە ماڵپەڕەوە زیادکرا!**\n\n"
+        f"✨ **ئەنیمیی نوێ زیادکرا!**\n\n"
         f"📌 **ناو:** {anime_name}\n"
         f"🇯🇵 **ژاپۆنی:** {japanese_name}\n"
         f"📂 **وەرز:** {season}\n"
@@ -90,6 +93,25 @@ def add_anime():
 
     return redirect(url_for("home"))
 
+# بەشی بۆتی تەلەگرام بە شێوازێکی یەکخراو
+async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    keyboard = [["🎬 لیستی ئەنیمی", "🔍 گەڕان"]]
+    await update.message.reply_text("بەخێر بێیت بۆ بۆتی ئۆرا ئەنیمی!", reply_markup=ReplyKeyboardMarkup(keyboard, resize_keyboard=True))
+
+def run_bot():
+    if BOT_TOKEN:
+        try:
+            bot_app = Application.builder().token(BOT_TOKEN).build()
+            bot_app.add_handler(CommandHandler("start", start_command))
+            bot_app.run_polling(drop_pending_updates=True)
+        except Exception as e:
+            print(f"Bot error: {e}")
+
 if __name__ == "__main__":
+    # کارپێکردنی بۆتەکە لە پشتەوە بە بێ کێشەی کانفڵیکت
+    bot_thread = threading.Thread(target=run_bot)
+    bot_thread.daemon = True
+    bot_thread.start()
+
     port = int(os.environ.get("PORT", 5000))
     app.run(host="0.0.0.0", port=port)
