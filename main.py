@@ -1,6 +1,6 @@
 import os
 import logging
-from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, ReplyKeyboardMarkup, ReplyKeyboardRemove
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, ReplyKeyboardMarkup
 from telegram.ext import (
     Application,
     CommandHandler,
@@ -8,7 +8,6 @@ from telegram.ext import (
     MessageHandler,
     ContextTypes,
     filters,
-    ConversationHandler,
 )
 
 # ڕێکخستنی Logging
@@ -17,26 +16,18 @@ logging.basicConfig(
 )
 
 BOT_TOKEN = os.environ.get("BOT_TOKEN")
-ADMIN_IDS = [6450069400, 5455374693, 8535560894, 1475355789, 5242890148, 5893919813]
+ADMIN_IDS = [6450069400, 5455374693, 8535560894, 1475355789, 5242890148]
+
+# لینکی ماڵپەڕەکەت لە Railway (ئەگەر ناونیشانی دومەینەکەت جیاوازە، دەتوانیت لێرەدا بیگۆڕیت)
+WEBSITE_URL = os.environ.get("RAILWAY_STATIC_URL", "https://aura-anime1-bot.up.railway.app")
 
 ANIMES_DATABASE = {}
-
-# حاڵەتەکانی Conversation Handler
-ADD_NAME, ADD_SEASON, ADD_EPISODE, ADD_LINK = range(4)
 
 
 def get_main_menu():
     keyboard = [
         ["🎬 لیستی ئەنیمی", "🔍 گەڕانی خێرا"],
         ["🛠 پانێڵی ستاف (ئەدیمین)"]
-    ]
-    return ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
-
-
-def get_admin_menu():
-    keyboard = [
-        ["➕ زیادکردنی ئەنیمی", "✏️ دەستکاریکردنی ئەنیمی"],
-        ["🗑 سڕینەوەی ئەنیمی", "🔙 گەڕانەوە بۆ منیووی سەرەکی"]
     ]
     return ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
 
@@ -82,9 +73,6 @@ async def handle_text_messages(update: Update, context: ContextTypes.DEFAULT_TYP
         return
     elif text == "🛠 پانێڵی ستاف (ئەدیمین)":
         await staff_panel(update, context)
-        return
-    elif text == "🔙 گەڕانەوە بۆ منیووی سەرەکی":
-        await update.message.reply_text("🔙 گەڕانەوە بۆ منیووی سەرەکی.", reply_markup=get_main_menu())
         return
 
     if context.user_data.get("searching"):
@@ -132,16 +120,8 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         reply_markup = InlineKeyboardMarkup(keyboard)
         await query.edit_message_text(f"🎬 **{anime_name}** - **{season_name}**:", reply_markup=reply_markup, parse_mode="Markdown")
 
-    elif data.startswith("del_"):
-        anime_name = data.replace("del_", "")
-        if anime_name in ANIMES_DATABASE:
-            del ANIMES_DATABASE[anime_name]
-            await query.edit_message_text(f"✅ ئەنیمی **{anime_name}** بەسەرکەوتوویی سڕایەوە!", parse_mode="Markdown")
-        else:
-            await query.edit_message_text("❌ ئەم ئەنیمییە پێشتر سڕاوەتەوە یان بوونی نییە.")
 
-
-# پانێڵی ئەدیمین
+# پانێڵی ئەدیمین بە بەستەرەوە بۆ ماڵپەڕ
 async def staff_panel(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
 
@@ -149,102 +129,25 @@ async def staff_panel(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("⛔️ ببوورە، تەنها ئەدیمین دەتوانێت ئەم پانێڵە بەکاربهێنێت!", reply_markup=get_main_menu())
         return
 
-    await update.message.reply_text(
-        "🛠 **بەخێر بێیت بۆ پانێڵی ستاف**\nتکایە بژاردەیەک هەڵبژێرە:",
-        reply_markup=get_admin_menu()
-    )
-
-
-async def start_add(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user_id = update.effective_user.id
-    if user_id not in ADMIN_IDS:
-        return ConversationHandler.END
-
-    await update.message.reply_text("📌 ناوی ئەو ئەنیمییە بنووسە کە دەتەوێت زیادی بکەیت یان دەستکاری بکەیت:\n(/cancel بۆ هەڵوەشاندنەوە)", reply_markup=ReplyKeyboardRemove())
-    return ADD_NAME
-
-
-async def get_anime_name(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    context.user_data["new_anime_name"] = update.message.text
-    await update.message.reply_text("📂 ناوی وەرزەکە بنووسە (بۆ نموونە: وەرزی 1):")
-    return ADD_SEASON
-
-
-async def get_season_name(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    context.user_data["new_season_name"] = update.message.text
-    await update.message.reply_text("🎬 ناوی ئەڵقەکە یان ڕێژەی ئەڵقەکان بنووسە (بۆ نموونە: ئەڵقەی 1-12 یان ئەڵقەی 1):")
-    return ADD_EPISODE
-
-
-async def get_episode_name(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    context.user_data["new_episode_name"] = update.message.text
-    await update.message.reply_text("🔗 لینکی ئەڵقەکە یان لینکی پۆستی چەناڵەکە بنووسە:")
-    return ADD_LINK
-
-
-async def save_anime(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    link = update.message.text
-    anime_name = context.user_data["new_anime_name"]
-    season_name = context.user_data["new_season_name"]
-    episode_name = context.user_data["new_episode_name"]
-
-    if anime_name not in ANIMES_DATABASE:
-        ANIMES_DATABASE[anime_name] = {"Seasons": {}}
-
-    if season_name not in ANIMES_DATABASE[anime_name]["Seasons"]:
-        ANIMES_DATABASE[anime_name]["Seasons"][season_name] = {}
-
-    ANIMES_DATABASE[anime_name]["Seasons"][season_name][episode_name] = link
-
-    await update.message.reply_text(
-        f"✅ بە سەرکەوتوویی پاشەکەوت کرا!\n\n📌 ئەنیمی: {anime_name}\n📂 وەرز: {season_name}\n🎬 ئەڵقە: {episode_name}",
-        reply_markup=get_admin_menu()
-    )
-    return ConversationHandler.END
-
-
-async def start_delete(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user_id = update.effective_user.id
-    if user_id not in ADMIN_IDS:
-        return
-
-    if not ANIMES_DATABASE:
-        await update.message.reply_text("⚠️ هیچ ئەنیمییەک لە لیستەکەدا نییە بۆ سڕینەوە.", reply_markup=get_admin_menu())
-        return
-
-    keyboard = []
-    for name in ANIMES_DATABASE.keys():
-        keyboard.append([InlineKeyboardButton(f"🗑 {name}", callback_data=f"del_{name}")])
-
+    # دروستکردنی دوگمەی شێوە ماڵپەڕ (Web App / Inline URL Button)
+    keyboard = [
+        [InlineKeyboardButton("🌐 کردنەوەی ماڵپەڕی بەڕێوەبردن (Admin Website)", url=f"https://{WEBSITE_URL}" if not WEBSITE_URL.startswith("http") else WEBSITE_URL)]
+    ]
     reply_markup = InlineKeyboardMarkup(keyboard)
-    await update.message.reply_text("🗑 **ئەو ئەنیمییە هەڵبژێرە کە دەتەوێت بسڕێتەوە:**", reply_markup=reply_markup, parse_mode="Markdown")
 
+    admin_message = (
+        "🛠 **بەخێر بێیت بۆ پانێڵی کۆنتڕۆڵی ستاف**\n\n"
+        "لێرەوە دەتوانیت بچیتە سەر ماڵپەڕی تایبەت بە ئەنیمییەکان بۆ زیادکردن، دەستکاریکردن و پاشەکەوتکردنی هەموو داتاکان بە ئاسانی:\n\n"
+        "🔑 **Password بۆ چوونەژوورەوە:** `aura_admin_pass`"
+    )
 
-async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text("❌ کردارەکە هەڵوەشێنرایەوە.", reply_markup=get_admin_menu())
-    return ConversationHandler.END
+    await update.message.reply_text(admin_message, reply_markup=reply_markup, parse_mode="Markdown")
 
 
 def main():
     app = Application.builder().token(BOT_TOKEN).build()
 
-    add_handler = ConversationHandler(
-        entry_points=[
-            MessageHandler(filters.Regex("^➕ زیادکردنی ئەنیمی$"), start_add),
-            MessageHandler(filters.Regex("^✏️ دەستکاریکردنی ئەنیمی$"), start_add)
-        ],
-        states={
-            ADD_NAME: [MessageHandler(filters.TEXT & ~filters.COMMAND, get_anime_name)],
-            ADD_SEASON: [MessageHandler(filters.TEXT & ~filters.COMMAND, get_season_name)],
-            ADD_EPISODE: [MessageHandler(filters.TEXT & ~filters.COMMAND, get_episode_name)],
-            ADD_LINK: [MessageHandler(filters.TEXT & ~filters.COMMAND, save_anime)],
-        },
-        fallbacks=[CommandHandler("cancel", cancel)],
-    )
-
     app.add_handler(CommandHandler("start", start))
-    app.add_handler(add_handler)
-    app.add_handler(MessageHandler(filters.Regex("^🗑 سڕینەوەی ئەنیمی$"), start_delete))
     app.add_handler(CallbackQueryHandler(button_handler))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_text_messages))
 
