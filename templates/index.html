@@ -1,0 +1,86 @@
+<!DOCTYPE html>
+<html lang="ckb" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>پانێڵی بەڕێوەبردنی ئۆرا ئەنیمی</title>
+    <style>
+        body { font-family: 'Segoe UI', Tahoma, sans-serif; background-color: #0f172a; color: #f8fafc; margin: 0; padding: 20px; }
+        .container { max-width: 850px; margin: 30px auto; background: #1e293b; padding: 30px; border-radius: 16px; box-shadow: 0 10px 30px rgba(0,0,0,0.5); }
+        h2, h3 { color: #38bdf8; text-align: center; margin-bottom: 20px; }
+        .form-group { margin-bottom: 15px; }
+        label { display: block; margin-bottom: 5px; font-weight: bold; font-size: 14px; }
+        input { width: 100%; padding: 12px; border-radius: 8px; border: 1px solid #334155; background: #0f172a; color: #fff; box-sizing: border-box; font-size: 14px; }
+        button { width: 100%; padding: 14px; background-color: #0284c7; color: white; border: none; border-radius: 8px; font-size: 16px; font-weight: bold; cursor: pointer; transition: 0.3s; margin-top: 10px; }
+        button:hover { background-color: #0369a1; }
+        table { width: 100%; border-collapse: collapse; margin-top: 30px; }
+        th, td { border: 1px solid #334155; padding: 12px; text-align: center; font-size: 14px; }
+        th { background-color: #0284c7; color: white; }
+        .logout { background: #ef4444; padding: 8px 16px; text-decoration: none; color: white; border-radius: 6px; font-size: 13px; font-weight: bold; float: left; }
+        .login-box { max-width: 400px; margin: 50px auto; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        {% if logged_in %}
+            <a href="/logout" class="logout">دەرچوون 🚪</a>
+            <h2>✨ پانێڵی بەڕێوەبردنی ئۆرا ئەنیمی</h2>
+            
+            <form action="/add" method="POST">
+                <div class="form-group">
+                    <label>ناوی ئەنیمی (ئینگلیزی/کوردی):</label>
+                    <input type="text" name="anime_name" placeholder="بۆ نموونە: Solo Leveling" required>
+                </div>
+                <div class="form-group">
+                    <label>ناوی ئەنیمی (ژاپۆنی):</label>
+                    <input type="text" name="japanese_name" placeholder="بۆ نموونە: 俺だけレベルアップな件" required>
+                </div>
+                <div class="form-group">
+                    <label>وەرز (Season):</label>
+                    <input type="text" name="season" placeholder="بۆ نموونە: وەرزی 1" required>
+                </div>
+                <div class="form-group">
+                    <label>ئەڵقەکان (Episodes):</label>
+                    <input type="text" name="episodes" placeholder="بۆ نموونە: ئەڵقەی 1-12" required>
+                </div>
+                <div class="form-group">
+                    <label>لینکی پۆستی چەناڵ (Telegram Link):</label>
+                    <input type="url" name="post_link" placeholder="https://t.me/..." required>
+                </div>
+                <button type="submit">💾 پاشەکەوتکردن لە داتابەیس و ناردن بۆ بۆت</button>
+            </form>
+
+            <h3>📁 لیستی ئەنیمییە تۆمارکراوەکان</h3>
+            <table>
+                <tr>
+                    <th>ناو</th>
+                    <th>ژاپۆنی</th>
+                    <th>وەرز</th>
+                    <th>ئەڵقەکان</th>
+                    <th>لینک</th>
+                </tr>
+                {% for anime in animes %}
+                <tr>
+                    <td>{{ anime[1] }}</td>
+                    <td>{{ anime[2] }}</td>
+                    <td>{{ anime[3] }}</td>
+                    <td>{{ anime[4] }}</td>
+                    <td><a href="{{ anime[5] }}" target="_blank" style="color: #38bdf8; text-decoration: none;">سەیرکردن 🔗</a></td>
+                </tr>
+                {% endfor %}
+            </table>
+        {% else %}
+            <div class="login-box">
+                <h2>🔒 چوونەژوورەوەی ئەدیمین</h2>
+                <form action="/login" method="POST">
+                    <div class="form-group">
+                        <label>وشەی تێپەڕ (Password):</label>
+                        <input type="password" name="password" placeholder="پاسوۆرد بنووسە..." required>
+                    </div>
+                    <button type="submit">چوونەژوورەوە 🔑</button>
+                </form>
+            </div>
+        {% endif %}
+    </div>
+</body>
+</html>
