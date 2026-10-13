@@ -1,19 +1,22 @@
-
+```python
 import os
 import html
+import csv
+import io
+import zipfile
 import logging
 import sqlite3
+
 from pathlib import Path
 from urllib.parse import urlparse
 
-from telegram import Update, ReplyKeyboardMarkup, BotCommand
+from telegram import ReplyKeyboardMarkup, BotCommand
 from telegram.constants import ParseMode
 from telegram.ext import (
     Application,
     CommandHandler,
     MessageHandler,
     ConversationHandler,
-    ContextTypes,
     filters,
 )
 
@@ -22,14 +25,16 @@ from telegram.ext import (
 BOT_TOKEN = os.environ.get("BOT_TOKEN", "").strip()
 
 ADMIN_IDS = {
-    6450069400,
-    5455374693,
-    8535560894,
-    1475355789,
-    5242890148,
+    6450069400,  # Sung Jin
+    7741069173,  # Tessia
+    5455374693,  # Kaell
+    8535560894,  # Peshin
 }
 
 DB_PATH = Path(__file__).resolve().parent / "anime.db"
+
+MAX_ZIP_SIZE = 20 * 1024 * 1024
+MAX_CSV_SIZE = 5 * 1024 * 1024
 
 ANIME_NAME, JAPANESE_NAME, SEASON, EPISODES, POST_LINK = range(5)
 
@@ -54,7 +59,6 @@ CANCEL_MENU = ReplyKeyboardMarkup(
 )
 
 PRIVATE = filters.ChatType.PRIVATE
-GROUPS = filters.ChatType.GROUPS
 
 
 # =============== DATABASE ===============
@@ -144,7 +148,7 @@ def safe_url(value):
             and bool(parsed.netloc)
             and "." in parsed.netloc
         )
-    except ValueError:
+    except (ValueError, AttributeError):
         return False
 
 
@@ -161,6 +165,223 @@ def anime_card(anime):
     )
 
 
+# =============== ZIP / CSV IMPORT ===============
+
+async def receive_zip(update, context):
+    message = update.effective_message
+    user = update.effective_user
+    document = message.document
+
+    # Only the listed admins can import anime.
+    if not user or user.id not in ADMIN_IDS:
+        await message.reply_text(
+            "⛔ تەنها ئەدمینە ڕێگەپێدراوەکان دەتوانن ZIP زیاد بکەن."
+        )
+        return
+
+    if not document or not document.file_name:
+        await message.reply_text(
+            "⚠️ تکایە فایلێکی ZIP بنێرە."
+        )
+        return
+
+    if not document.file_name.lower().endswith(".zip"):
+        await message.reply_text(
+            "⚠️ فایلەکە ZIP نییە.\n"
+            "فایلەکەت بە شێوەی .zip بنێرە."
+        )
+        return
+
+    if document.file_size and document.file_size > MAX_ZIP_SIZE:
+        await message.reply_text(
+            "⚠️ قەبارەی ZIP زۆرە. سنوورەکە ٢٠ مێگابایتە."
+        )
+        return
+
+    await message.reply_text(
+        "⏳ فایلەکە وەردەگرم و زانیارییەکان دەخوێنمەوە..."
+    )
+
+    try:
+        telegram_file = await document.get_file()
+        buffer = io.BytesIO()
+        await telegram_file.download_to_memory(out=buffer)
+        buffer.seek(0)
+
+        added = 0
+        updated = 0
+        skipped = 0
+
+        with zipfile.ZipFile(buffer, "r") as archive:
+            csv_names = [
+                name for name in archive.namelist()
+                if Path(name).name.lower() == "animes.csv"
+                and not name.endswith("/")
+            ]
+
+            if not csv_names:
+                await message.reply_text(
+                    "❌ فایلەکە دروست نییە.\n"
+                    "تکایە animes.csv لە ناو ZIP ـەکە دابنێ."
+                )
+                return
+
+            csv_info = archive.getinfo(csv_names[0])
+
+            if csv_info.file_size > MAX_CSV_SIZE:
+                await message.reply_text(
+                    "⚠️ قەبارەی animes.csv زۆرە."
+                )
+                return
+
+            raw_csv = archive.read(csv_names[0])
+            csv_text = raw_csv.decode("utf-8-sig")
+            reader = csv.DictReader(io.StringIO(csv_text))
+
+            required_columns = {
+                "name_kurdish",
+                "name_japanese",
+                "telegram_post_link",
+            }
+
+            actual_columns = set(reader.fieldnames or [])
+            missing = required_columns - actual_columns
+
+            if missing:
+                await message.reply_text(
+                    "❌ ستوونە پێویستەکان لە CSV نییە:\n"
+                    + ", ".join(sorted(missing))
+                )
+                return
+
+            with db_connect() as db:
+                for row in reader:
+                    kurdish_name = (
+                        row.get("name_kurdish") or ""
+                    ).strip()
+                    japanese_name = (
+                        row.get("name_japanese") or ""
+                    ).strip()
+                    post_link = (
+                        row.get("telegram_post_link") or ""
+                    ).strip()
+
+                    season_text = (
+                        row.get("season") or "1"
+                    ).strip()
+                    episodes_text = (
+                        row.get("episodes") or "1"
+                    ).strip()
+
+                    if (
+                        not kurdish_name
+                        or not japanese_name
+                        or not safe_url(post_link)
+                    ):
+                        skipped += 1
+                        continue
+
+                    try:
+                        season = int(season_text)
+                        episodes = int(episodes_text)
+                    except (ValueError, TypeError):
+                        skipped += 1
+                        continue
+
+                    if (
+                        not 1 <= season <= 100
+                        or not 1 <= episodes <= 10000
+                    ):
+                        skipped += 1
+                        continue
+
+                    existing = db.execute(
+                        """
+                        SELECT id FROM animes
+                        WHERE anime_name = ? COLLATE NOCASE
+                           OR japanese_name = ? COLLATE NOCASE
+                        LIMIT 1
+                        """,
+                        (kurdish_name, japanese_name),
+                    ).fetchone()
+
+                    if existing:
+                        db.execute(
+                            """
+                            UPDATE animes
+                            SET anime_name = ?,
+                                japanese_name = ?,
+                                season = ?,
+                                episodes = ?,
+                                post_link = ?
+                            WHERE id = ?
+                            """,
+                            (
+                                kurdish_name,
+                                japanese_name,
+                                season,
+                                episodes,
+                                post_link,
+                                existing["id"],
+                            ),
+                        )
+                        updated += 1
+                    else:
+                        db.execute(
+                            """
+                            INSERT INTO animes
+                            (anime_name, japanese_name, season,
+                             episodes, post_link)
+                            VALUES (?, ?, ?, ?, ?)
+                            """,
+                            (
+                                kurdish_name,
+                                japanese_name,
+                                season,
+                                episodes,
+                                post_link,
+                            ),
+                        )
+                        added += 1
+
+                db.commit()
+
+        await message.reply_text(
+            "✅ <b>هاوردنی ئەنیمی تەواو بوو!</b>\n\n"
+            f"🆕 زیادکرا: {added}\n"
+            f"🔄 نوێکرایەوە: {updated}\n"
+            f"⚠️ پشتگوێ خرا: {skipped}\n"
+            f"📚 کۆی ئەنیمی لە داتابەیس: {anime_count()}",
+            parse_mode=ParseMode.HTML,
+            reply_markup=MENU,
+        )
+
+    except zipfile.BadZipFile:
+        await message.reply_text(
+            "❌ فایلەکە ZIP ـێکی دروست نییە."
+        )
+    except UnicodeDecodeError:
+        await message.reply_text(
+            "❌ CSV ناتوانرێت بخوێندرێتەوە. "
+            "تکایە بە UTF-8 پاشەکەوتی بکە."
+        )
+    except (sqlite3.Error, OSError, ValueError) as error:
+        logger.exception("ZIP import failed")
+        await message.reply_text(
+            "❌ هەڵەیەک لە هاوردنی فایل ڕوویدا.\n"
+            f"جۆری هەڵە: {html.escape(str(error)[:250])}",
+            parse_mode=ParseMode.HTML,
+        )
+    except Exception:
+        logger.exception("Unexpected ZIP import error")
+        await message.reply_text(
+            "❌ هەڵەیەکی نەناسراو ڕوویدا. "
+            "لۆگی بۆتەکە بپشکنە."
+        )
+
+
+# =============== SHOW MENU ===============
+
 async def show_menu(update, context):
     message = update.effective_message
     if message:
@@ -175,8 +396,7 @@ async def show_menu(update, context):
 # =============== COMMANDS ===============
 
 async def start(update, context):
-    # Clear unfinished private workflows when restarting.
-    if update.effective_chat.type == "private":
+    if update.effective_chat and update.effective_chat.type == "private":
         context.user_data.pop("anime_data", None)
         context.user_data.pop("search_mode", None)
 
@@ -184,7 +404,6 @@ async def start(update, context):
 
 
 async def other_command(update, context):
-    # Slash commands work, but ordinary group conversation is ignored.
     await show_menu(update, context)
 
 
@@ -222,6 +441,7 @@ async def add_start(update, context):
 
 async def get_name(update, context):
     value = update.effective_message.text.strip()
+
     if not value or len(value) > 200:
         await update.effective_message.reply_text(
             "⚠️ ناوێکی دروست بنووسە."
@@ -229,6 +449,7 @@ async def get_name(update, context):
         return ANIME_NAME
 
     context.user_data["anime_data"]["anime_name"] = value
+
     await update.effective_message.reply_text(
         "٢. ناوی ژاپۆنی ئەنیمی بنووسە:"
     )
@@ -237,6 +458,7 @@ async def get_name(update, context):
 
 async def get_japanese_name(update, context):
     value = update.effective_message.text.strip()
+
     if not value or len(value) > 200:
         await update.effective_message.reply_text(
             "⚠️ ناوێکی دروست بنووسە."
@@ -244,6 +466,7 @@ async def get_japanese_name(update, context):
         return JAPANESE_NAME
 
     context.user_data["anime_data"]["japanese_name"] = value
+
     await update.effective_message.reply_text(
         "٣. ژمارەی وەرز بنووسە:"
     )
@@ -252,6 +475,7 @@ async def get_japanese_name(update, context):
 
 async def get_season(update, context):
     value = update.effective_message.text.strip()
+
     if not value.isdigit() or not 1 <= int(value) <= 100:
         await update.effective_message.reply_text(
             "⚠️ ژمارەی وەرز دەبێت لە ١ تا ١٠٠ بێت."
@@ -259,6 +483,7 @@ async def get_season(update, context):
         return SEASON
 
     context.user_data["anime_data"]["season"] = int(value)
+
     await update.effective_message.reply_text(
         "٤. ژمارەی ئەڵقەکان بنووسە:"
     )
@@ -267,6 +492,7 @@ async def get_season(update, context):
 
 async def get_episodes(update, context):
     value = update.effective_message.text.strip()
+
     if not value.isdigit() or not 1 <= int(value) <= 10000:
         await update.effective_message.reply_text(
             "⚠️ ژمارەیەکی دروست لە ١ تا ١٠٠٠٠ بنووسە."
@@ -274,6 +500,7 @@ async def get_episodes(update, context):
         return EPISODES
 
     context.user_data["anime_data"]["episodes"] = int(value)
+
     await update.effective_message.reply_text(
         "٥. لینکی پۆستی تێلەگرام بنێرە:"
     )
@@ -290,6 +517,7 @@ async def get_post_link(update, context):
         return POST_LINK
 
     data = context.user_data.get("anime_data")
+
     if not data:
         await update.effective_message.reply_text(
             "❌ زانیارییەکان نەدۆزرایەوە.",
@@ -304,6 +532,7 @@ async def get_post_link(update, context):
     except sqlite3.Error:
         logger.exception("Database save failed")
         context.user_data.pop("anime_data", None)
+
         await update.effective_message.reply_text(
             "❌ هەڵەیەک لە پاشەکەوتکردندا ڕوویدا.",
             reply_markup=MENU,
@@ -367,6 +596,7 @@ async def send_cards(update, items):
 
     for anime in items:
         card = anime_card(anime)
+
         if message and len(message) + len(card) + 2 > 3800:
             await update.effective_message.reply_text(
                 message,
@@ -390,6 +620,7 @@ async def send_cards(update, items):
 
 async def search_start(update, context):
     context.user_data["search_mode"] = True
+
     await update.effective_message.reply_text(
         "🔍 ناوی ئەنیمی یان ناوی ژاپۆنی بنووسە:",
         reply_markup=CANCEL_MENU,
@@ -446,7 +677,6 @@ async def about(update, context):
 async def private_text_router(update, context):
     text = update.effective_message.text.strip()
 
-    # Handle search text only after the search button was clicked.
     if context.user_data.get("search_mode"):
         await search_text(update, context)
         return
@@ -509,8 +739,7 @@ def main():
     add_conversation = ConversationHandler(
         entry_points=[
             MessageHandler(
-                PRIVATE
-                & filters.Regex(r"^➕ زیادکردنی ئەنیمی$"),
+                PRIVATE & filters.Regex(r"^➕ زیادکردنی ئەنیمی$"),
                 add_start,
             )
         ],
@@ -556,16 +785,21 @@ def main():
         allow_reentry=True,
     )
 
-    # Add conversation first, and only in private chat.
+    # Add the single-anime conversation first.
     app.add_handler(add_conversation)
 
-    # Commands remain available in groups and private chats.
+    # ZIP uploads: admin-only check is inside receive_zip().
+    app.add_handler(
+        MessageHandler(
+            PRIVATE & filters.Document.ALL,
+            receive_zip,
+        )
+    )
+
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("cancel", cancel))
     app.add_handler(MessageHandler(filters.COMMAND, other_command))
 
-    # All normal text handlers are private-chat only.
-    # The bot will not answer ordinary group conversation.
     app.add_handler(
         MessageHandler(
             PRIVATE & filters.TEXT & ~filters.COMMAND,
@@ -581,3 +815,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+```
