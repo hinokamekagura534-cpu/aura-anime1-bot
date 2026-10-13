@@ -1,2 +1,5 @@
+flask
+flask-cors
 python-telegram-bot
+gunicorn
 requests
