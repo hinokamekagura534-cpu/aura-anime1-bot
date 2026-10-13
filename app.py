@@ -1,97 +1,114 @@
+
 import os
 import sqlite3
-from flask import Flask, render_template, request, redirect, url_for, session
-import requests
+from pathlib import Path
+from functools import wraps
+
+from flask import Flask, request, jsonify, session
+from flask_cors import CORS
 
 app = Flask(__name__)
-app.secret_key = "aura_anime_secret_admin_key"
+app.secret_key = os.environ.get("FLASK_SECRET_KEY", "change-this-secret")
 
-BOT_TOKEN = os.environ.get("BOT_TOKEN")
-ADMIN_IDS = [6450069400, 5455374693, 8535560894, 1475355789, 5242890148]
-ADMIN_PASSWORD = "aura_admin_pass"
+BOT_TOKEN = os.environ.get("BOT_TOKEN", "").strip()
+ADMIN_PASSWORD = os.environ.get(
+    "ADMIN_PASSWORD", "AURA-ADMIN-2026"
+)
+
+# هەردوو فایلەکە لە هەمان شوێن بن
+DB_PATH = Path(__file__).resolve().parent / "anime.db"
+
+# لە Railway، FRONTEND_ORIGIN دابنێ بۆ ناونیشانی ڕاستەقینەی ئەپی GitHub Pages
+FRONTEND_ORIGIN = os.environ.get("FRONTEND_ORIGIN", "").strip()
+
+CORS(
+    app,
+    resources={r"/api/*": {"origins": [FRONTEND_ORIGIN]}}
+    if FRONTEND_ORIGIN else {r"/api/*": {"origins": "*"}}
+)
+
+
+def db_connect():
+    db = sqlite3.connect(str(DB_PATH), timeout=15)
+    db.row_factory = sqlite3.Row
+    return db
+
 
 def init_db():
-    conn = sqlite3.connect("anime.db")
-    cursor = conn.cursor()
-    cursor.execute('''
-        CREATE TABLE IF NOT EXISTS animes (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            anime_name TEXT NOT NULL,
-            japanese_name TEXT,
-            season TEXT,
-            episodes TEXT,
-            post_link TEXT
-        )
-    ''')
-    conn.commit()
-    conn.close()
+    with db_connect() as db:
+        db.execute("""
+            CREATE TABLE IF NOT EXISTS animes (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                anime_name TEXT NOT NULL,
+                japanese_name TEXT NOT NULL DEFAULT '',
+                season INTEGER NOT NULL DEFAULT 1,
+                episodes INTEGER NOT NULL DEFAULT 1,
+                post_link TEXT NOT NULL DEFAULT ''
+            )
+        """)
+        db.commit()
 
-init_db()
 
-@app.route("/")
-def home():
-    logged_in = session.get("logged_in", False)
-    animes = []
-    if logged_in:
-        conn = sqlite3.connect("anime.db")
-        cursor = conn.cursor()
-        cursor.execute("SELECT * FROM animes ORDER BY id DESC")
-        animes = cursor.fetchall()
-        conn.close()
-    return render_template("index.html", logged_in=logged_in, animes=animes)
+def require_admin(fn):
+    @wraps(fn)
+    def wrapper(*args, **kwargs):
+        password = request.headers.get("X-Admin-Code", "")
+        if password != ADMIN_PASSWORD:
+            return jsonify({"error": "ڕێگەپێدراو نییت"}), 403
+        return fn(*args, **kwargs)
+    return wrapper
 
-@app.route("/login", methods=["POST"])
-def login():
-    if request.form.get("password") == ADMIN_PASSWORD:
-        session["logged_in"] = True
-    return redirect(url_for("home"))
 
-@app.route("/logout")
-def logout():
-    session.pop("logged_in", None)
-    return redirect(url_for("home"))
+@app.get("/api/health")
+def health():
+    return jsonify({"ok": True, "service": "Aura Anime"})
 
-@app.route("/add", methods=["POST"])
+
+@app.get("/api/animes")
+def get_animes():
+    with db_connect() as db:
+        rows = db.execute(
+            "SELECT * FROM animes ORDER BY id DESC"
+        ).fetchall()
+    return jsonify([dict(row) for row in rows])
+
+
+@app.post("/api/animes")
+@require_admin
 def add_anime():
-    if not session.get("logged_in"):
-        return redirect(url_for("home"))
+    data = request.get_json(silent=True) or {}
 
-    anime_name = request.form.get("anime_name")
-    japanese_name = request.form.get("japanese_name")
-    season = request.form.get("season")
-    episodes = request.form.get("episodes")
-    post_link = request.form.get("post_link")
+    name = str(data.get("anime_name", "")).strip()
+    japanese = str(data.get("japanese_name", "")).strip()
+    link = str(data.get("post_link", "")).strip()
 
-    # پاشەکەوتکردن لە داتابەیسی SQLite
-    conn = sqlite3.connect("anime.db")
-    cursor = conn.cursor()
-    cursor.execute('''
-        INSERT INTO animes (anime_name, japanese_name, season, episodes, post_link)
-        VALUES (?, ?, ?, ?, ?)
-    ''', (anime_name, japanese_name, season, episodes, post_link))
-    conn.commit()
-    conn.close()
+    try:
+        season = int(data.get("season", 1))
+        episodes = int(data.get("episodes", 1))
+    except (TypeError, ValueError):
+        return jsonify({"error": "ژمارەکان دروست نین"}), 400
 
-    # ناردنی ئاگاداری ڕاستەوخۆ بۆ تەلەگرام بە بێ کێشەی پۆلینگ
-    message = (
-        f"✨ **ئەنیمیی نوێ لە ماڵپەڕەوە زیادکرا!**\n\n"
-        f"📌 **ناو:** {anime_name}\n"
-        f"🇯🇵 **ژاپۆنی:** {japanese_name}\n"
-        f"📂 **وەرز:** {season}\n"
-        f"🎬 **ئەڵقەکان:** {episodes}\n"
-        f"🔗 **لینک:** {post_link}"
-    )
-    
-    url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage"
-    if BOT_TOKEN:
-        for admin_id in ADMIN_IDS:
-            try:
-                requests.post(url, json={"chat_id": admin_id, "text": message, "parse_mode": "Markdown"})
-            except:
-                pass
+    if not name or len(name) > 200:
+        return jsonify({"error": "ناوی ئەنیمە دروست نییە"}), 400
 
-    return redirect(url_for("home"))
+    if not 1 <= season <= 100 or not 1 <= episodes <= 10000:
+        return jsonify({"error": "ژمارەی وەرز یان ئەڵقە هەڵەیە"}), 400
+
+    with db_connect() as db:
+        cursor = db.execute("""
+            INSERT INTO animes
+            (anime_name, japanese_name, season, episodes, post_link)
+            VALUES (?, ?, ?, ?, ?)
+        """, (name, japanese, season, episodes, link))
+        db.commit()
+        anime_id = cursor.lastrowid
+
+    # ئەنیمەکە ئێستا لە هەمان داتابەیسدا پاشەکەوت کراوە.
+    # بۆ ئەوەی لە بۆتدا دەرکەوێت، main.py دەبێت هەمان anime.db بخوێنێتەوە.
+    return jsonify({"ok": True, "id": anime_id}), 201
+
 
 if __name__ == "__main__":
+    init_db()
     port = int(os.environ.get("PORT", 5000))
     app.run(host="0.0.0.0", port=port)
