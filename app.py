@@ -1,6 +1,5 @@
 import os
 import sqlite3
-import subprocess
 from flask import Flask, render_template, request, redirect, url_for, session
 import requests
 
@@ -10,12 +9,6 @@ app.secret_key = "aura_anime_secret_admin_key"
 BOT_TOKEN = os.environ.get("BOT_TOKEN")
 ADMIN_IDS = [6450069400, 5455374693, 8535560894, 1475355789, 5242890148]
 ADMIN_PASSWORD = "aura_admin_pass"
-
-# کارپێکردنی بۆتەکە لە پشتەوە
-try:
-    subprocess.Popen(["python", "main.py"])
-except Exception as e:
-    print(f"Error starting bot: {e}")
 
 def init_db():
     conn = sqlite3.connect("anime.db")
@@ -79,7 +72,7 @@ def add_anime():
     conn.close()
 
     message = (
-        f"✨ **ئەنیمیی نوێ زیادکرا!**\n\n"
+        f"✨ **ئەنیمیی نوێ لە ماڵپەڕەوە زیادکرا!**\n\n"
         f"📌 **ناو:** {anime_name}\n"
         f"🇯🇵 **ژاپۆنی:** {japanese_name}\n"
         f"📂 **وەرز:** {season}\n"
@@ -90,7 +83,10 @@ def add_anime():
     url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage"
     if BOT_TOKEN:
         for admin_id in ADMIN_IDS:
-            requests.post(url, json={"chat_id": admin_id, "text": message, "parse_mode": "Markdown"})
+            try:
+                requests.post(url, json={"chat_id": admin_id, "text": message, "parse_mode": "Markdown"})
+            except:
+                pass
 
     return redirect(url_for("home"))
 
